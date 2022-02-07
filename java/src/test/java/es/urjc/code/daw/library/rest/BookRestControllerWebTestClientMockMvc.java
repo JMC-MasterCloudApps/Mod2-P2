@@ -1,6 +1,7 @@
 package es.urjc.code.daw.library.rest;
 
 import static com.github.javafaker.Faker.instance;
+import static es.urjc.code.daw.library.DatabaseInitializer.books;
 import static es.urjc.code.daw.library.DatabaseInitializer.titles;
 import static es.urjc.code.daw.library.rest.TestData.ADMIN_TEST;
 import static es.urjc.code.daw.library.rest.TestData.ALL_PASS;
@@ -11,14 +12,19 @@ import static es.urjc.code.daw.library.rest.TestData.BOOK_TITLE;
 import static es.urjc.code.daw.library.rest.TestData.ROLE_ADMIN;
 import static es.urjc.code.daw.library.rest.TestData.ROLE_USER;
 import static es.urjc.code.daw.library.rest.TestData.USER_TEST;
-import static java.util.Optional.ofNullable;
+import static java.lang.String.format;
+import static java.util.Optional.of;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.CoreMatchers.containsString;
 import static org.hamcrest.CoreMatchers.equalTo;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.when;
 import static org.springframework.http.MediaType.APPLICATION_JSON;
 import static org.springframework.web.reactive.function.client.ExchangeFilterFunctions.basicAuthentication;
 
 import es.urjc.code.daw.library.book.Book;
+import es.urjc.code.daw.library.book.BookService;
 import es.urjc.code.daw.library.user.User;
 import es.urjc.code.daw.library.user.UserRepository;
 import java.util.Arrays;
@@ -26,28 +32,51 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.test.web.reactive.server.WebTestClient;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.client.MockMvcWebTestClient;
 
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@DisplayName("REST Web Test Client")
-class BookRestControllerWebTestClient {
+@SpringBootTest
+@AutoConfigureMockMvc
+@DisplayName("Unit-Test Web Test Client")
+class BookRestControllerWebTestClientMockMvc {
 
 	@Autowired
+	private MockMvc mockMvc;
+
+	@MockBean
+	private BookService service;
+
+	@MockBean
 	private UserRepository userRepository;
 
-	@Autowired
 	private WebTestClient testClient;
+	private Book newBook;
 
 	@BeforeEach
     public void setUp() {
-		if (ofNullable(userRepository.findByName(USER_TEST.val)).isEmpty()) {
-			userRepository.save(new User(USER_TEST.val, ALL_PASS.val, ROLE_USER.val));
-		}
+		testClient = MockMvcWebTestClient.bindTo(mockMvc).build();
 
-		if (ofNullable(userRepository.findByName(ADMIN_TEST.val)).isEmpty()) {
-			userRepository.save(new User(ADMIN_TEST.val, ALL_PASS.val, ROLE_USER.val, ROLE_ADMIN.val));
-		}
+		final var bookId = 1234L;
+		newBook = new Book(instance().book().title(), instance().funnyName().name());
+		final var returnedBook = new Book(newBook.getTitle(), newBook.getDescription());
+		returnedBook.setId(bookId);
+
+
+		when(userRepository.findByName(USER_TEST.val)).thenReturn(new User(USER_TEST.val, ALL_PASS.val, ROLE_USER.val));
+		when(userRepository.findByName(ADMIN_TEST.val)).thenReturn(new User(ADMIN_TEST.val, ALL_PASS.val, ROLE_USER.val, ROLE_ADMIN.val));
+
+		when(service.findAll()).thenReturn(books);
+		when(service.save(any())).thenReturn(returnedBook);
+		when(service.findOne(bookId)).thenReturn(of(returnedBook));
+
+		doNothing()
+				.doThrow(new EmptyResultDataAccessException(format("No entity with id %s exists!", bookId), 1))
+				.when(service).delete(bookId);
     }
 	
 	@Test
@@ -65,12 +94,6 @@ class BookRestControllerWebTestClient {
 	@Test
 	@DisplayName("POST /api/books/")
 	void addNewBook() {
-
-		// GIVEN
-		var newBook = new Book(
-				instance().book().title(),
-				instance().funnyName().name()
-		);
 
 		// WHEN
 		var result = requestNewBookCreation(newBook);
@@ -136,7 +159,6 @@ class BookRestControllerWebTestClient {
 
     private Long getIdFromNewBookRequest() {
 
-      var newBook = new Book(instance().book().title(), instance().funnyName().name());
       var response = requestNewBookCreation(newBook);
 
       return response.returnResult(Book.class).getResponseBody().blockFirst().getId();
