@@ -4,10 +4,12 @@ import static com.github.javafaker.Faker.instance;
 import static io.restassured.RestAssured.given;
 import static io.restassured.http.ContentType.JSON;
 import static io.restassured.path.json.JsonPath.from;
+import static java.util.Optional.ofNullable;
 import static org.hamcrest.CoreMatchers.equalTo;
 import static org.hamcrest.CoreMatchers.hasItems;
 import static org.hamcrest.CoreMatchers.notNullValue;
 import static org.springframework.http.HttpStatus.CREATED;
+import static org.springframework.http.HttpStatus.NOT_FOUND;
 import static org.springframework.http.HttpStatus.OK;
 
 import es.urjc.code.daw.library.DatabaseInitializer;
@@ -16,6 +18,8 @@ import es.urjc.code.daw.library.user.User;
 import es.urjc.code.daw.library.user.UserRepository;
 import io.restassured.RestAssured;
 import io.restassured.response.Response;
+import java.util.Optional;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -39,19 +43,24 @@ class BookRestControllerTest {
 
 	@Autowired
 	private UserRepository userRepository;
-	
+
 	@BeforeEach
     public void setUp() {
         RestAssured.port = port;
         RestAssured.useRelaxedHTTPSValidation();
         RestAssured.baseURI = "https://localhost:" + port;
-        
-        createTestUsers();
+
+		createTestUsers();
     }
-	
+
 	private void createTestUsers() {
-		userRepository.save(new User(USER_TEST, ALL_PASS, "ROLE_USER"));
-		userRepository.save(new User(ADMIN_TEST, ALL_PASS, "ROLE_USER, ROLE_ADMIN"));
+		if (ofNullable(userRepository.findByName(USER_TEST)).isEmpty()) {
+			userRepository.save(new User(USER_TEST, ALL_PASS, "ROLE_USER"));
+		}
+
+		if (ofNullable(userRepository.findByName(ADMIN_TEST)).isEmpty()) {
+			userRepository.save(new User(ADMIN_TEST, ALL_PASS, "ROLE_USER", "ROLE_ADMIN"));
+		}
 	}
 	
 	@Test
@@ -73,14 +82,34 @@ class BookRestControllerTest {
 
 		// GIVEN
 		var newBook = new Book(instance().book().title(), instance().funnyName().name());
+		System.out.println(newBook);
 
 		// WHEN
 		Response response = requestNewBookCreation(newBook);
+
+		System.out.println(response.asString());
 
 		// THEN book has been created
 		int id = from(response.getBody().asString()).get(BOOK_ID);
 		assertBookResponse(response, newBook);
 		assertBookExists(newBook, id);
+	}
+
+	@Test
+	@DisplayName("REST Assured DELETE /api/books/{id}")
+	void deleteExistingBook() {
+
+      // GIVEN
+      int id = getIdFromNewBookRequest();
+
+      System.out.println("ID: " + id);
+
+      // WHEN
+      var response = requestBookDeletionById(id);
+
+      // THEN
+      response.then().statusCode(OK.value());
+      requestBookDeletionById(id).then().statusCode(NOT_FOUND.value());
 	}
 
 	private Response requestNewBookCreation(Book newBook) {
@@ -116,4 +145,22 @@ class BookRestControllerTest {
 			.body(BOOK_TITLE, equalTo(newBook.getTitle()))
 			.body("description", equalTo(newBook.getDescription()));
 	}
+
+    private int getIdFromNewBookRequest() {
+
+      var newBook = new Book(instance().book().title(), instance().funnyName().name());
+      System.out.print(newBook);
+
+      Response response = requestNewBookCreation(newBook);
+      return from(response.getBody().asString()).get(BOOK_ID);
+    }
+
+    private Response requestBookDeletionById(int id) {
+      return given()
+              .auth().basic(ADMIN_TEST, ALL_PASS)
+              .pathParam(BOOK_ID, id).
+            when()
+              .delete(BOOKS_PATH + "{id}").andReturn();
+    }
+
 }
