@@ -36,6 +36,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.dao.EmptyResultDataAccessException;
+import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.web.reactive.server.WebTestClient;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.client.MockMvcWebTestClient;
@@ -66,10 +67,6 @@ class BookRestControllerWebTestClientMockMvc {
 		final var returnedBook = new Book(newBook.getTitle(), newBook.getDescription());
 		returnedBook.setId(bookId);
 
-
-		when(userRepository.findByName(USER_TEST.val)).thenReturn(new User(USER_TEST.val, ALL_PASS.val, ROLE_USER.val));
-		when(userRepository.findByName(ADMIN_TEST.val)).thenReturn(new User(ADMIN_TEST.val, ALL_PASS.val, ROLE_USER.val, ROLE_ADMIN.val));
-
 		when(service.findAll()).thenReturn(books);
 		when(service.save(any())).thenReturn(returnedBook);
 		when(service.findOne(bookId)).thenReturn(of(returnedBook));
@@ -92,6 +89,7 @@ class BookRestControllerWebTestClientMockMvc {
 	}
 
 	@Test
+	@WithMockUser(password = "pass")
 	@DisplayName("POST /api/books/")
 	void addNewBook() {
 
@@ -104,6 +102,7 @@ class BookRestControllerWebTestClientMockMvc {
 	}
 
 	@Test
+	@WithMockUser(username = "admin", password = "pass", roles = {"USER", "ADMIN"})
 	@DisplayName("DELETE /api/books/{id}")
 	void deleteExistingBook() {
 
@@ -121,7 +120,6 @@ class BookRestControllerWebTestClientMockMvc {
 	private WebTestClient.ResponseSpec requestNewBookCreation(Book newBook) {
 
 		return testClient.
-			mutate().filter(basicAuthentication(USER_TEST.val, ALL_PASS.val)).build().
 			post()
 				.uri(BOOKS_PATH.val)
 				.bodyValue(newBook).
@@ -167,7 +165,6 @@ class BookRestControllerWebTestClientMockMvc {
     private WebTestClient.ResponseSpec requestBookDeletionById(long id) {
 
 		return testClient.
-				mutate().filter(basicAuthentication(ADMIN_TEST.val, ALL_PASS.val)).build().
 				delete().uri(BOOKS_PATH.val + id).
 				exchange();
     }
