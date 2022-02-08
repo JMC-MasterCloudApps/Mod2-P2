@@ -36,3 +36,6 @@ mvnw.cmd
 java/.settings/*
 java/bin/*
 java/.*
+
+node/node_modules/*
+node/package-lock.json
